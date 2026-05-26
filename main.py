@@ -4,6 +4,7 @@ import gspread
 import time
 import os
 import json
+import base64
 
 # --- НАСТРОЙКИ ---
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1nfVOSaSV66tHJWLnN40SuC10uC9NQmrgubNDRVYX1L8/edit?gid=572312672#gid=572312672"
@@ -14,6 +15,16 @@ FN_NAMES = {
     "0035": "ФН-36 (1.2)", "0036": "ФН-15 (исп. 3)", "0037": "ФН-36 (исп. 3)",
     "0003": "Centerm K-10", "0163": "Aisino A90", "0203": "Centerm K-9"
 }
+
+# --- АВТОРИЗАЦИЯ ---
+# Декодируем ключ из Base64 прямо внутри Python
+creds_b64 = os.environ['GOOGLE_CREDENTIALS']
+creds_json = base64.b64decode(creds_b64).decode('utf-8')
+creds_dict = json.loads(creds_json)
+
+gc = gspread.service_account_from_dict(creds_dict)
+sh = gc.open_by_url(SHEET_URL)
+ws = sh.sheet1
 
 async def check_fn_universal(session, serial_number):
     clean_number = str(serial_number).strip()
@@ -34,26 +45,18 @@ async def check_fn_universal(session, serial_number):
     return "⛔️ НЕ НАЙДЕН", "Отсутствует в реестре"
 
 async def run_bot():
-    print("🚀 БОТ-ПРОВЕРЩИК ФН ЗАПУЩЕН")
-    
-    # Авторизация через переменную окружения (идеально для GitHub)
-    creds_dict = json.loads(os.environ['GOOGLE_CREDS_JSON'])
-    gc = gspread.service_account_from_dict(creds_dict)
-    sh = gc.open_by_url(SHEET_URL)
-    ws = sh.sheet1
-    
+    print("🚀 БОТ ЗАПУЩЕН")
     async with aiohttp.ClientSession() as session:
         while True:
             try:
                 fn_numbers = ws.col_values(1)
                 status_values = ws.col_values(2)
                 for i, num in enumerate(fn_numbers):
-                    row_index = i + 1
-                    if row_index == 1 or (len(status_values) > i and status_values[i].strip() != ""): continue
+                    if i == 0 or (len(status_values) > i and status_values[i].strip() != ""): continue
                     num = str(num).strip()
                     if len(num) >= 10 and num.isdigit():
                         status, model = await check_fn_universal(session, num)
-                        ws.update(range_name=f'B{row_index}:C{row_index}', values=[[status, model]])
+                        ws.update(range_name=f'B{i+1}:C{i+1}', values=[[status, model]])
                         await asyncio.sleep(2)
                 await asyncio.sleep(60)
             except Exception as e:
