@@ -27,27 +27,18 @@ async def check_fn_universal(session, serial_number):
                 if response.status == 200:
                     data = await response.json()
                     res_text = str(data.get("check_result", "")).lower()
-                    
                     if "включен в реестр" in res_text:
-                        if "не зарегистрирован" in res_text:
-                            return "❌ НЕ ЗАРЕГИСТРИРОВАН", FN_NAMES.get(code, f"код {code}")
-                        else:
-                            return "✅ ЗАРЕГИСТРИРОВАН", FN_NAMES.get(code, f"код {code}")
-        except:
-            continue
+                        status = "✅ ЗАРЕГИСТРИРОВАН" if "не зарегистрирован" not in res_text else "❌ НЕ ЗАРЕГИСТРИРОВАН"
+                        return status, FN_NAMES.get(code, f"код {code}")
+        except: continue
     return "⛔️ НЕ НАЙДЕН", "Отсутствует в реестре"
 
 async def run_bot():
     print("🚀 БОТ-ПРОВЕРЩИК ФН ЗАПУЩЕН")
     
-    # Инициализация Gspread через переменные среды (для GitHub Actions)
-    # Если переменная GOOGLE_CREDENTIALS есть, используем её, если нет — файл
-    if 'GOOGLE_CREDENTIALS' in os.environ:
-        creds = json.loads(os.environ['GOOGLE_CREDENTIALS'])
-        gc = gspread.service_account_from_dict(creds)
-    else:
-        gc = gspread.service_account(filename='credentials.json')
-        
+    # Авторизация через переменную окружения (идеально для GitHub)
+    creds_dict = json.loads(os.environ['GOOGLE_CREDS_JSON'])
+    gc = gspread.service_account_from_dict(creds_dict)
     sh = gc.open_by_url(SHEET_URL)
     ws = sh.sheet1
     
@@ -56,28 +47,17 @@ async def run_bot():
             try:
                 fn_numbers = ws.col_values(1)
                 status_values = ws.col_values(2)
-                
-                print(f"[{time.strftime('%H:%M:%S')}] Проверка таблицы...")
-
                 for i, num in enumerate(fn_numbers):
                     row_index = i + 1
-                    if row_index == 1 or (len(status_values) > i and status_values[i].strip() != ""):
-                        continue
-
+                    if row_index == 1 or (len(status_values) > i and status_values[i].strip() != ""): continue
                     num = str(num).strip()
                     if len(num) >= 10 and num.isdigit():
-                        print(f"🔎 Проверяю: {num}...")
-                        status_text, model_name = await check_fn_universal(session, num)
-                        ws.update(range_name=f'B{row_index}:C{row_index}', values=[[status_text, model_name]])
+                        status, model = await check_fn_universal(session, num)
+                        ws.update(range_name=f'B{row_index}:C{row_index}', values=[[status, model]])
                         await asyncio.sleep(2)
-
                 await asyncio.sleep(60)
             except Exception as e:
-                print(f"❌ ОШИБКА: {e}")
-                await asyncio.sleep(20)
+                print(f"❌ Ошибка: {e}"); await asyncio.sleep(20)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(run_bot())
-    except KeyboardInterrupt:
-        print("\nБот остановлен.")
+    asyncio.run(run_bot())
